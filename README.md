@@ -10,24 +10,44 @@ This isn't exactly a real project and lib currently but it's got some useful stu
 
 
 ```javascript
+function createApp(){
+  var app = new App('Test');
+  var win = app.main;
+  var position;
 
-function init(){
-  var win = new Window;
+  // open window on startup
+  app.on('startup', function(){ win.show() });
+  // close window on shutdown
+  app.on('shutdown', function(){ win.close() });
 
   win.on('paint', function(){
-    var p = new qt.Painter;
+    var p = new Painter;
     p.begin(this);
-    p.drawText(20, 30, '[ '+[win.top-0, win.left - 0 + win.width, win.top - 0 + win.height, win.left - 0].join(', ')+' ]');
+    if (position) {
+      p.drawText(20, 30, util.inspect(position));
+    }
     p.end();
   });
 
-  win.on('mousePress', function(e){
-    console.log(require('util').inspect(e, true, 4));
+  win.on('mousedown', function(event){
+    // right click to exit
+    if (event.button === 'RightButton') app.stop();
+    console.log('mousedown', event);
   });
 
-  win.size = [500, 500];
-  win.show();
-  return win;
+  win.on('mouseup', function(event){
+    console.log('mouseup', event);
+  });
+
+  win.on('mousemove', function(event){
+    position = event;
+    this.update();
+  });
+
+  return app;
 }
 
+var application = createApp();
+
+application.start();
 ```
