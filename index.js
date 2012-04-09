@@ -11,7 +11,7 @@ var enums = {
   key: reverse(require('node-qt').Key)
 };
 
-var qt = function(qt){
+var qt = module.exports = function(qt){
   return {
     App: qt.QApplication,
     Brush: qt.QBrush,
@@ -30,7 +30,6 @@ var qt = function(qt){
     ScrollBar: qt.QScrollBar,
     Size: qt.QSize,
     Sound: qt.QSound,
-    TestEventList: qt.QTestEventList,
     Widget: qt.QWidget
   };
 }(require('node-qt'));
@@ -106,11 +105,11 @@ var preprocess = {
 // ### Event mediator and router ###
 // #################################
 
-var eventSources = function(){
+var router = function(){
   var sources = {};
 
-  function EventSource(source, events){
-    this.source = source;
+  function EventSource(type, events){
+    this.type = type;
     this.events = [];
     this.emitters = new WeakMap;
     this.registerEvent(events);
@@ -127,7 +126,7 @@ var eventSources = function(){
     removeAllListeners: function removeAllListeners(emitter){
       this.emitters.set(emitter, {});
     },
-    removeListener: function removeListener(emitter, listener, event){
+    removeListener: function removeListener(emitter, event, listener){
       var listeners = this.emitters.get(emitter)[event];
       listeners.splice(listeners.indexOf(listener), 1);
     },
@@ -137,10 +136,13 @@ var eventSources = function(){
         listeners[i].apply(emitter, args);
       }
     },
-    registerListener: function registerListener(emitter, listener, event){
+    registerListener: function registerListener(emitter, event, listener){
       var events = this.emitters.get(emitter);
       if (event in events){
         return events[event].push(listener);
+      } else if (!isNative(emitter.constructor)) {
+        events[event] = [listener];
+        return true;
       } else {
         events[event] = [listener];
         emitter[event+'Event'](function(){
@@ -157,12 +159,12 @@ var eventSources = function(){
     }
   };
 
-  return function eventSources(source, events){
+  return function router(type, events){
     if (events) {
-      sources[source.name] = new EventSource(source, events);
+      sources[type] = new EventSource(type, events);
     } else {
-      if (source && sources[source.name]) {
-        return sources[source.name];
+      if (type && sources[type]) {
+        return sources[type];
       } else {
         return false;
       }
@@ -170,20 +172,29 @@ var eventSources = function(){
   }
 }();
 
+function isConstructor(o){
+  return typeof o === 'function' && o.prototype &&
+         Object.getOwnPropertyNames(o.prototype).length >
+         ('constructor' in o.prototype);
+}
+
+function isNative(o){
+  return typeof o === 'function' && (o+'').slice(-17) === '{ [native code] }';
+}
 
 
 // ################################################
 // ### Prototype and initializer for interfaces ###
 // ################################################
 
-function QFace(ctor){
-  Object.defineProperty(this, '_lib', { value: new ctor });
-  eventSources(ctor).registerEmitter(this._lib);
+function Emitter(type){
+  router(type).registerEmitter(this);
+  Object.defineProperty(this, 'emitterType', { value: type, configurable: true, writable: true });
 }
 
-QFace.prototype = {
+Emitter.prototype = {
   on: function on(event, listener){
-    eventSources(this._lib.constructor).registerListener(this._lib, listener, event);
+    router(this.emitterType).registerListener(this, event, listener);
   },
   once: function once(event, listener){
     var self;
@@ -193,10 +204,10 @@ QFace.prototype = {
     });
   },
   emit: function emit(event){
-    eventSources(this._lib.constructor).emit(this._lib, event, slice(arguments, 1));
+    router(this.emitterType).emit(this, event, slice(arguments, 1));
   },
   off: function off(event, listener){
-    eventSources(this._lib.constructor).removeListener(this._lib, event, listener);
+    router(this.emitterType).removeListener(this, event, listener);
   }
 };
 
@@ -207,28 +218,8 @@ QFace.prototype = {
 function createInterface(opts){
   var ctor = opts.ctor;
   var lib = opts.lib;
-  ctor.prototype = Object.create(QFace.prototype);
-
-  // maps the existing functions to getter/setter where possible
-  function defineAccessors(obj, props){
-    Object.keys(props).forEach(function(name){
-      var desc = { configurable: true, enumerable: true };
-      var p = props[name];
-
-      if (typeof p.get === 'function')
-        desc.get = p.get
-      if (typeof p.set === 'function')
-        desc.set = p.set
-
-      if (typeof p.get === 'string')
-        desc.get = function(){ return this._lib[p.get]() }
-      if (typeof p.set === 'string')
-        desc.set = function(v){ this._lib[p.set].apply(this._lib, Array.isArray(v) ? v : [v]) }
-
-
-      Object.defineProperty(obj, name, desc);
-    });
-  }
+  ctor.prototype = Object.create(Emitter.prototype);
+  ctor.prototype.constructor = ctor;
 
   // copy over reamining methods so everything is available on the wrapper
   function defineMethods(obj, methods){
@@ -245,15 +236,43 @@ function createInterface(opts){
   return ctor;
 }
 
+// maps the existing functions to getter/setter where possible
+function defineAccessors(obj, props){
+  Object.keys(props).forEach(function(name){
+    var desc = { configurable: true, enumerable: true };
+    var p = props[name];
+
+    if (typeof p.get === 'function')
+      desc.get = p.get
+    if (typeof p.set === 'function')
+      desc.set = p.set
+
+    if (typeof p.get === 'string')
+      desc.get = function(){ return this._lib[p.get]() }
+    if (typeof p.set === 'string')
+      desc.set = function(v){ this._lib[p.set].apply(this._lib, Array.isArray(v) ? v : [v]) }
+
+
+    Object.defineProperty(obj, name, desc);
+  });
+}
+
 // ##################################################
 // ### Window widget interface wrapper definition ###
 // ##################################################
 
-eventSources(qt.Widget, ['paint', 'keyPress', 'keyRelease', 'mouseMove', 'mousePress', 'mouseRelease']);
+router('Widget', ['paint', 'keyPress', 'keyRelease', 'mouseMove', 'mousePress', 'mouseRelease']);
 
-var Window = createInterface({
+function Window(w,h){
+  Object.defineProperty(this, '_lib', { value: new qt.Widget });
+  Emitter.call(this._lib, 'Widget');
+  this.on = Emitter.prototype.on.bind(this._lib);
+  this.size = [w||400, h||400];
+}
+
+module.exports.Window = createInterface({
   lib:       qt.Widget,
-  ctor:      function Window(w,h){ run(); QFace.call(this, qt.Widget); this.size [w||400, h||400] },
+  ctor:      Window,
   methods:   [ 'update', 'move', 'show', 'close', 'parent' ],
   accessors: {
     height:  { get: 'height',     set: function(v){ this.size = [this.width, v]  } },
@@ -269,21 +288,67 @@ var Window = createInterface({
 
 
 
-// start the app alongside window creation
-// TODO an actual Application class managing state
-function run(){
-  var app = new qt.App;
-  //setTimeout(function(){ process.exit() }, 3000);
-  var timer = setInterval(app.processEvents, 10);
-  run = function(){ return app }
-  app.STOP = global.STOP = function(){ clearInterval(timer) }
-  return app;
+
+var qtColor = qt.Color;
+
+function Color(r,g,b,a){
+  Object.defineProperty(this, '_lib', { value: new qtColor(r,g,b,a) });
+}
+module.exports.Color = createInterface({
+  lib:       qtColor,
+  ctor:      Color,
+  accessors: {
+    name:  { get: 'name',  set: 'name'  },
+    red:   { get: 'red',   set: 'red'   },
+    green: { get: 'green', set: 'green' },
+    blue:  { get: 'blue',  set: 'blue'  },
+    alpha: { get: 'alpha', set: 'alpha' } }
+});
+
+
+var qtApp = qt.App;
+
+module.exports.App = App;
+
+router('App', ['startup', 'shutdown']);
+
+function App(name, main){
+  var self = this;
+  var app = new qtApp;
+  this.main = main || new Window;
+  this.name = name;
+  this.start = start;
+  Emitter.call(this, 'App');
+
+  var timer;
+  function start(){
+    timer = setInterval(app.processEvents, 10);
+    self.stop = stop;
+    delete self.start;
+    self.emit('startup');
+  }
+  function stop(){
+    clearInterval(timer);
+    self.start = start;
+    self.emit('shutdown');
+    delete self.stop;
+  }
 }
 
+App.prototype = {
+  __proto__: Emitter.prototype,
+  constructor: App,
+};
 
-// create the basic window example with the new an improved event binding and accessors
-function init(){
-  var win = new Window;
+
+
+// // create the basic window example with the new an improved event binding and accessors
+function createApp(){
+  var app = new App('Test');
+  var win = app.main;
+
+  app.on('startup', function(){ win.show() })
+  app.on('shutdown', function(){ win.close() })
 
   win.on('paint', function(){
     var p = new qt.Painter;
@@ -294,14 +359,13 @@ function init(){
 
   win.on('mousePress', function(e){
     if (e.button = 'RightButton')  {
-      win.close();
-      STOP();
+      app.stop();
     }
-    console.log(require('util').inspect(e, true, 4));
   });
 
-  win.show();
-  return win;
+  return app;
 }
 
-init();
+var prog = createApp();
+
+prog.start();
