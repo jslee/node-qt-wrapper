@@ -6,7 +6,7 @@ var util = require('util');
 // ########################################
 
 var enums = {
-  mouse: reverse(require('node-qt').MouseButton),
+  button: reverse(require('node-qt').MouseButton),
   color: reverse(require('node-qt').GlobalColor),
   key: reverse(require('node-qt').Key)
 };
@@ -34,15 +34,28 @@ var qt = module.exports = function(qt){
   };
 }(require('node-qt'));
 
+
 // ################################
 // ### Utilities and fast slice ###
 // ################################
+
 
 function reverse(o){
   return Object.keys(o).reduce(function(r,s){
     r[o[s]] = s;
     return r;
   }, {});
+}
+
+
+function isConstructor(o){
+  return typeof o === 'function' && o.prototype &&
+         Object.getOwnPropertyNames(o.prototype).length >
+         ('constructor' in o.prototype);
+}
+
+function isNative(o){
+  return typeof o === 'function' && (o+'').slice(-17) === '{ [native code] }';
 }
 
 function isObject(o){ return Object(o) === o }
@@ -67,149 +80,152 @@ function slice(a,o,p){
 
 
 
+var Emitter = function(){
 
-// ################################
-// ### Event object translators ###
-// ################################
+  // ########################################
+  // ### Map QT events to JS style events ###
+  // ########################################
 
-function lookup(set, field){
-  return function(e){
-    var val = e[field];
-    if (typeof val === 'function')
-      val = val();
-    e[field] = set[val];
-    return e;
-  }
-}
-
-function resolve(names){
-  return function(e){
-    names.forEach(function(name){
-      if (typeof name === 'string')
-        e[name] = e[name]();
-    });
-    return e;
-  }
-}
-
-
-var preprocess = {
-  mouseMove: resolve(['x', 'y']),
-  mousePress: resolve(['x', 'y', lookup(enums.mouse, 'button')]),
-  mouseRelease: resolve(['x', 'y', lookup(enums.mouse, 'button')]),
-  keyPress: resolve(['key', 'text']),
-  keyRelease: resolve(['key', 'text'])
-};
-
-// #################################
-// ### Event mediator and router ###
-// #################################
-
-var router = function(){
-  var sources = {};
-
-  function EventSource(type, events){
-    this.type = type;
-    this.events = [];
-    this.emitters = new WeakMap;
-    this.registerEvent(events);
-  }
-
-  EventSource.prototype = {
-    constructor: EventSource,
-    registerEvent: function registerEvent(event){
-      event && [].push.apply(this.events, Array.isArray(event) ? event : [event]);
-    },
-    registerEmitter: function registerEmitter(emitter){
-      this.emitters.set(emitter, {});
-    },
-    removeAllListeners: function removeAllListeners(emitter){
-      this.emitters.set(emitter, {});
-    },
-    removeListener: function removeListener(emitter, event, listener){
-      var listeners = this.emitters.get(emitter)[event];
-      listeners.splice(listeners.indexOf(listener), 1);
-    },
-    emit: function emit(emitter, event, args){
-      var listeners = this.emitters.get(emitter)[event];
-      for (var i=0; i < listeners.length; i++) {
-        listeners[i].apply(emitter, args);
-      }
-    },
-    registerListener: function registerListener(emitter, event, listener){
-      var events = this.emitters.get(emitter);
-      if (event in events){
-        return events[event].push(listener);
-      } else if (!isNative(emitter.constructor)) {
-        events[event] = [listener];
-        return true;
-      } else {
-        events[event] = [listener];
-        emitter[event+'Event'](function(){
-          var args = slice(arguments);
-          if (event in preprocess) {
-            preprocess[event].apply(null, args);
-          }
-          for (var i=0; i < events[event].length; i++) {
-            events[event][i].apply(emitter, args);
-          }
-        });
-        return 1;
-      }
+  function resolve(names){
+    return function(e){
+      names.forEach(function(name){
+        if (typeof name === 'string')
+          e[name] = e[name]();
+        if (name in enums)
+          e[name] = enums[name][e[name]];
+      });
+      return e;
     }
+  }
+
+  var map = {
+    mousemove: [ 'mouseMove',    resolve(['x', 'y']) ],
+    mousedown: [ 'mousePress',   resolve(['x', 'y', 'button']) ],
+    mouseup:   [ 'mouseRelease', resolve(['x', 'y', 'button']) ],
+    keydown:   [ 'keyPress',     resolve(['key', 'text']) ],
+    keyup:     [ 'keyRelease',   resolve(['key', 'text']) ],
+    paint:     [ 'paint', function(){}]
   };
 
-  return function router(type, events){
-    if (events) {
-      sources[type] = new EventSource(type, events);
-    } else {
-      if (type && sources[type]) {
-        return sources[type];
-      } else {
-        return false;
+  var adapt = ['mouseMoveEvent', 'mousePressEvent', 'mouseReleaseEvent', 'keyPressEvent', 'keyReleaseEvent']
+
+  function needsAdapter(emitter){
+    for (var i=0; i < adapt.length; i++) {
+      if (adapt[i] in emitter) return true;
+    }
+    return false;
+  }
+
+  function adaptEmitter(emitter){
+    var refcount = {};
+    var origOn = emitter.on;
+    var origOff = emitter.off;
+
+    emitter.on = function on(event, callback){
+      if (event in map) {
+        if (refcount[event]) {
+          refcount[event]++;
+        } else {
+          refcount[event] = 1;
+          if (event === 'mousemove') {
+            emitter.setMouseTracking(true);
+          }
+          var norm = map[event];
+          emitter[norm[0]+'Event'](function(e){
+            e = norm[1](e);
+            emitter.emit(event, e);
+          });
+        }
       }
+      return origOn.apply(this, arguments);
+    }
+
+    emitter.off = function off(event){
+      if (event in map && refcount[event]) {
+        if (!--refcount[event]) {
+          if (event === 'mousemove') {
+            emitter.setMouseTracking(false);
+          }
+          var norm = map[event];
+          emitter[norm[0]+'Event']();
+        }
+      }
+      return origOff.apply(this, arguments);
     }
   }
+
+  // ##############################################
+  // ### Prototype and initializer for emitters ###
+  // ##############################################
+
+  function Emitter(){
+    if (!Emitter.prototype.isPrototypeOf(this)) {
+      for (var k in Emitter.prototype) {
+        this[k] = Emitter.prototype[k];
+      }
+    }
+    if (needsAdapter(this)) {
+      adaptEmitter(this);
+    }
+    emitters.set(this, {});
+    receivers.set(this, this);
+  }
+
+  Emitter.forward = function forward(from, to){
+    if (!emitters.has(to)) {
+      emitters.set(to, {});
+      receivers.set(to, to);
+    }
+    emitters.set(from, emitters.get(to));
+    from.on = to.on.bind(to);
+    from.off = to.off.bind(to);
+  }
+
+  var emitters = new WeakMap;
+  var receivers = new WeakMap;
+
+  Emitter.prototype = {
+    on: function on(event, listener){
+      var events = emitters.get(this);
+      if (event in events){
+        events[event].push(listener);
+      } else {
+        events[event] = [listener];
+      }
+    },
+    once: function once(event, listener){
+      var self;
+      this.on(event, function(){
+        self.off(event, listener);
+        return listener.apply(receivers.get(this), arguments);
+      });
+    },
+    emit: function emit(event){
+      var listeners = emitters.get(this)[event];
+      if (listeners) {
+        for (var i=0; i < listeners.length; i++) {
+          listeners[i].apply(receivers.get(this), slice(arguments, 1));
+        }
+      }
+    },
+    off: function off(event, listener){
+      var listeners = emitters.get(this)[event];
+      if (listeners) {
+        listeners.splice(listeners.indexOf(listener), 1);
+      }
+    },
+    offAll: function offAll(event){
+      if (event) {
+        emitters.get(this)[event] = [];
+      } else {
+        emitters.set(this, {});
+      }
+    },
+  };
+
+  return Emitter;
 }();
 
-function isConstructor(o){
-  return typeof o === 'function' && o.prototype &&
-         Object.getOwnPropertyNames(o.prototype).length >
-         ('constructor' in o.prototype);
-}
-
-function isNative(o){
-  return typeof o === 'function' && (o+'').slice(-17) === '{ [native code] }';
-}
-
-
-// ################################################
-// ### Prototype and initializer for interfaces ###
-// ################################################
-
-function Emitter(type){
-  router(type).registerEmitter(this);
-  Object.defineProperty(this, 'emitterType', { value: type, configurable: true, writable: true });
-}
-
-Emitter.prototype = {
-  on: function on(event, listener){
-    router(this.emitterType).registerListener(this, event, listener);
-  },
-  once: function once(event, listener){
-    var self;
-    this.on(event, function(){
-      self.off(event, listener);
-      return listener.apply(this, arguments);
-    });
-  },
-  emit: function emit(event){
-    router(this.emitterType).emit(this, event, slice(arguments, 1));
-  },
-  off: function off(event, listener){
-    router(this.emitterType).removeListener(this, event, listener);
-  }
-};
 
 // ##########################################################
 // ### Create an interface wrapper closer to JS semantics ###
@@ -261,12 +277,10 @@ function defineAccessors(obj, props){
 // ### Window widget interface wrapper definition ###
 // ##################################################
 
-router('Widget', ['paint', 'keyPress', 'keyRelease', 'mouseMove', 'mousePress', 'mouseRelease']);
-
 function Window(w,h){
   Object.defineProperty(this, '_lib', { value: new qt.Widget });
-  Emitter.call(this._lib, 'Widget');
-  this.on = Emitter.prototype.on.bind(this._lib);
+  Emitter.call(this._lib);
+  Emitter.forward(this, this._lib);
   this.size = [w||400, h||400];
 }
 
@@ -310,15 +324,13 @@ var qtApp = qt.App;
 
 module.exports.App = App;
 
-router('App', ['startup', 'shutdown']);
-
 function App(name, main){
   var self = this;
   var app = new qtApp;
   this.main = main || new Window;
   this.name = name;
   this.start = start;
-  Emitter.call(this, 'App');
+  Emitter.call(this);
 
   var timer;
   function start(){
@@ -342,10 +354,11 @@ App.prototype = {
 
 
 
-// // create the basic window example with the new an improved event binding and accessors
+// create the basic window example with the new an improved event binding and accessors
 function createApp(){
   var app = new App('Test');
   var win = app.main;
+  var pos;
 
   app.on('startup', function(){ win.show() })
   app.on('shutdown', function(){ win.close() })
@@ -353,14 +366,25 @@ function createApp(){
   win.on('paint', function(){
     var p = new qt.Painter;
     p.begin(this);
-    p.drawText(20, 30, '[ '+[win.top, win.left  + win.width, win.top + win.height, win.left].join(', ')+' ]');
+    p.drawText(20, 30, util.inspect(pos));
     p.end();
   });
 
-  win.on('mousePress', function(e){
-    if (e.button = 'RightButton')  {
+  console.log(win);
+
+  win.on('mousedown', function(e){
+    if (e.button === 'RightButton')  {
       app.stop();
     }
+    console.log('down', e);
+  });
+  win.on('mouseup', function(e){
+    console.log('up', e);
+  });
+
+  win.on('mousemove', function(e){
+    pos = e;
+    this.update();
   });
 
   return app;
