@@ -33,17 +33,22 @@ function resolve(names){
 // ########################################
 // ### Map QT events to JS style events ###
 // ########################################
-
+function pass(e){return e}
 var map = {
   mousemove: [ 'mouseMove',    resolve(['x', 'y']) ],
   mousedown: [ 'mousePress',   resolve(['x', 'y', 'button']) ],
   mouseup:   [ 'mouseRelease', resolve(['x', 'y', 'button']) ],
   keydown:   [ 'keyPress',     resolve(['key', 'text']) ],
   keyup:     [ 'keyRelease',   resolve(['key', 'text']) ],
-  paint:     [ 'paint',        function(){}]
+  resize:    [ 'resize',       resolve(['oldSize'])],
+  mouseenter:[ 'enter', pass],
+  mouseleave:[ 'leave', pass],
+  paint:     [ 'paint', pass],
+  close:     [ 'close', pass],
 };
 
-var adapt = ['mouseMoveEvent', 'mousePressEvent', 'mouseReleaseEvent', 'keyPressEvent', 'keyReleaseEvent']
+var adapt = ['resizeEvent', 'closeEvent', 'mouseMoveEvent', 'mousePressEvent',
+             'mouseReleaseEvent', 'keyPressEvent', 'keyReleaseEvent', 'enterEvent', 'leaveEvent'];
 
 function needsAdapter(emitter){
   for (var i=0; i < adapt.length; i++) {
