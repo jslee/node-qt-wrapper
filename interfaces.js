@@ -1,5 +1,8 @@
 var qt = require('node-qt');
 var Emitter = require('./events');
+var reverse = require('./utility').reverse;
+var globalColor = reverse(qt.GlobalColor);
+
 
 // ##########################################################
 // ### Create an interface wrapper closer to JS semantics ###
@@ -76,6 +79,29 @@ module.exports.Window = createInterface({
     mouseTracking: { get: 'hasMouseTracking', set: 'setMouseTracking' } }
 });
 
+function ScrollArea(w,h){
+  Object.defineProperty(this, '_lib', { value: new qt.QScrollArea });
+}
+
+module.exports.ScrollArea = createInterface({
+  lib:       qt.QScrollArea,
+  ctor:      ScrollArea,
+  methods:   [ 'update', 'move', 'show', 'close', 'parent' ],
+  accessors: {
+    height:  { get: 'height',     set: function(v){ this.size = [this.width, v]  } },
+    width:   { get: 'width',      set: function(v){ this.size = [v, this.height] } },
+    left:    { get: 'x',          set: function(v){ this._lib.move(v, this.top)  } },
+    top:     { get: 'y',          set: function(v){ this._lib.move(this.left, v) } },
+    size:    { get: 'size',       set: 'resize' },
+    name:    { get: 'objectName', set: 'setObjectName' },
+    widget:      { get: 'widget',     set: 'setWidget' },
+    horizontal:  { get: 'horizontalScrollBar', set: 'setHorizontalScrollBarPolicy' },
+    vertical:    { get: 'verticalScrollBar',   set: 'setVerticalScrollBarPolicy' },
+    frameShape:  { set: 'setFrameShape' },
+    focusPolicy: { set: 'setFocusPolicy' } }
+});
+
+
 
 module.exports.App = App;
 
@@ -107,13 +133,15 @@ App.prototype = {
   constructor: App,
 };
 
-
+//rgba
+//hex
+//QColor
 function Color(r,g,b,a){
   Object.defineProperty(this, '_lib', { value: new qt.QColor(r,g,b,a) });
 }
 
 module.exports.Color = createInterface({
-  lib:       qt.qColor,
+  lib:       qt.QColor,
   ctor:      Color,
   accessors: {
     name:  { get: 'name',  set: 'name'  },
@@ -122,4 +150,177 @@ module.exports.Color = createInterface({
     blue:  { get: 'blue',  set: 'blue'  },
     alpha: { get: 'alpha', set: 'alpha' } }
 });
+
+function Size(size){
+  Object.defineProperty(this, '_lib', { value: size });
+}
+
+module.exports.Size = createInterface({
+  lib:       qt.QSize,
+  ctor:      Size,
+  accessors: {
+    width:  { get: 'width',  set: 'width'  },
+    height: { get: 'height', set: 'height' } }
+});
+
+
+function Pixmap(w,h){
+  Object.defineProperty(this, '_lib', { value: new qt.QPixmap(w,h) });
+}
+
+module.exports.Pixmap = createInterface({
+  lib:       qt.QPixmap,
+  ctor:      Size,
+  accessors: {
+    width:  { get: 'width',  set: 'width'  },
+    height: { get: 'height', set: 'height' } },
+  methods: ['save', 'fill']
+});
+
+
+function ScrollBar(r,g,b,a){
+  Object.defineProperty(this, '_lib', { value: new qt.QScrollBar(v) });
+}
+
+module.exports.ScrollBar = createInterface({
+  lib:       qt.QScrollBar,
+  ctor:      ScrollBar,
+  accessors: {
+    value:   { get: 'value',  set: 'setValue'  } }
+});
+
+
+function Painter(){
+  Object.defineProperty(this, '_lib', { value: new qt.QPainter });
+}
+
+module.exports.Painter = createInterface({
+  lib:       qt.QPainter,
+  ctor:      Painter,
+  accessors: {
+    isActive: { get: 'isActive' },
+    matrix:   { set: 'matrix' },
+    pen:      { set: 'pen' },
+    font:     { set: 'font'  }  },
+  methods: ['restore', 'save', 'begin', 'end', 'drawPixmap', 'drawImage', 'drawText', 'strokePath', 'fillRect']
+});
+
+
+//QPen(QColor)
+function Pen(brush, width, penStyle, penCapStyle, penJoinStyle){
+  Object.defineProperty(this, '_lib', { value: new qt.QPen(brush, width, penStyle, penCapStyle, penJoinStyle) });
+}
+
+module.exports.Pen = createInterface({
+  lib:  qt.QPen,
+  ctor: Pen
+});
+
+
+//QBrush(GlobalColor)
+function Brush(color){
+  if (color in globalColors) color = globalColors[color];
+  Object.defineProperty(this, '_lib', { value: new qt.QBrush(color) });
+}
+
+module.exports.Brush = createInterface({
+  lib:  qt.QBrush,
+  ctor: Brush
+});
+
+function Sound(filename){
+  Object.defineProperty(this, '_lib', { value: new qt.QSound(filename) });
+}
+
+module.exports.Sound = createInterface({
+  lib:       qt.QSound,
+  ctor:      Sound,
+  accessors: {
+    fileName: { set: 'fileName', get: 'fileName' },
+    loops:    { set: 'loops'  }  },
+  methods: ['play']
+});
+
+
+function Image(filename){
+  Object.defineProperty(this, '_lib', { value: new qt.QImage(filename) });
+}
+
+module.exports.Image = createInterface({
+  lib:  qt.QImage,
+  ctor: Image,
+  methods: ['isNull']
+});
+
+//QMatrix(QMatrix)
+function Matrix(m11, m12, m21, m22, dx, dy){
+  Object.defineProperty(this, '_lib', { value: new qt.QMatrix(m11, m12, m21, m22, dx, dy) });
+}
+
+module.exports.Matrix = createInterface({
+  lib:  qt.QMatrix,
+  ctor: Matrix,
+  accessors: {
+    m11: { set: 'm11', get: 'm11' },
+    m12: { set: 'm12', get: 'm12' },
+    m21: { set: 'm21', get: 'm21' },
+    m22: { set: 'm22', get: 'm22' },
+    dx: { set: 'dx', get: 'dx' },
+    dy: { set: 'dy', get: 'dy' } },
+  methods: ['translate', 'scale']
+});
+
+
+function PainterPath(a, b, c){
+  Object.defineProperty(this, '_lib', { value: new qt.QPainterPath(a, b, c) });
+}
+
+module.exports.PainterPath = createInterface({
+  lib:  qt.QPainterPath,
+  ctor: PainterPath,
+  methods: ['moveTo', 'lineTo', 'currentPosition', 'closeSubpath']
+});
+
+
+//QFont(string family, pointSize=-1, weight=-1, italic=false)
+//QFont(QFont font)
+function Font(family, pointSize, weight, italic){
+  Object.defineProperty(this, '_lib', { value: new qt.QFont(family, pointSize, weight, italic) });
+}
+
+module.exports.Font = createInterface({
+  lib:  qt.QFont,
+  ctor: Font,
+  accessors: {
+    family: { get: 'family', set: 'setFamily' },
+    pixelSize: { get: 'pixelSize', set: 'setPixelSize' },
+    pointSize: { get: 'pointSize', set: 'setPointSize' },
+    pointSizeF: { get: 'pointSizeF', set: 'setPointSizeF' } }
+});
+
+
+
+function PointF(x, y){
+  Object.defineProperty(this, '_lib', { value: new qt.QPointF(x, y) });
+}
+
+module.exports.PointF = createInterface({
+  lib:  qt.QPointF,
+  ctor: PointF,
+  accessors: {
+    isNull: { set: 'isNull', get: 'isNull' },
+    x: { set: 'x', get: 'x' },
+    y: { set: 'y', get: 'y' },
+    m22: { set: 'm22', get: 'm22' },
+    dx: { set: 'dx', get: 'dx' },
+    dy: { set: 'dy', get: 'dy' } },
+  methods: ['translate', 'scale']
+});
+
+
+
+
+
+
+
 

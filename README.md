@@ -12,34 +12,34 @@ This isn't exactly a real project and lib currently but it's got some useful stu
 ```javascript
 function createApp(){
   var app = new App('Test');
-  var win = app.main;
+  var window = app.main;
   var position;
 
   // open window on startup
-  app.on('startup', function(){ win.show() });
+  app.on('startup', function(){ window.show() });
   // close window on shutdown
-  app.on('shutdown', function(){ win.close() });
+  app.on('shutdown', function(){ window.close() });
 
-  win.on('paint', function(){
-    var p = new Painter;
-    p.begin(this);
+  window.on('paint', function(){
+    var painter = new Painter;
+    painter.begin(this);
     if (position) {
-      p.drawText(20, 30, util.inspect(position));
+      painter.drawText(20, 30, util.inspect(position));
     }
-    p.end();
+    painter.end();
   });
 
-  win.on('mousedown', function(event){
+  window.on('mousedown', function(event){
     // right click to exit
     if (event.button === 'RightButton') app.stop();
     console.log('mousedown', event);
   });
 
-  win.on('mouseup', function(event){
+  window.on('mouseup', function(event){
     console.log('mouseup', event);
   });
 
-  win.on('mousemove', function(event){
+  window.on('mousemove', function(event){
     position = event;
     this.update();
   });

@@ -1,6 +1,7 @@
 var qt = require('node-qt');
 
 var slice = require('./utility').slice;
+var reverse = require('./utility').reverse;
 
 module.exports = Emitter;
 
@@ -14,12 +15,7 @@ var enums = {
   key: reverse(qt.Key)
 };
 
-function reverse(o){
-  return Object.keys(o).reduce(function(r,s){
-    r[o[s]] = s;
-    return r;
-  }, {});
-}
+
 
 function resolve(names){
   return function(e){
