@@ -51,3 +51,34 @@ var application = createApp();
 
 application.start();
 ```
+
+### Valid Constructor Forms References
+
+```javascript
+function PainterPath(){}
+function Painter(){}
+
+function Sound(filename){}
+function Image(){}
+function Image(filename){}
+function Font(){}
+function Font(family,points,weight,italic){}
+
+function Brush(color){}
+function Matrix(){}
+function Matrix(m11,m12,m21,m22,dx,dy){}
+function PointF(x,y){}
+function ScrollArea(){}
+function ScrollArea(QWidget){}
+function Widget(){}
+function Widget(QWidget){}
+
+function Color(hex){}
+function Color(r,g,b,a){}
+
+function Size(size){}
+function Pixmap(w,h){}
+function Pen(){}
+function Pen(QColor){}
+function Pen(brush, width, penStyle, penCapStyle, penJoinStyle){}
+```

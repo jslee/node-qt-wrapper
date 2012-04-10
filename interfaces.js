@@ -53,56 +53,6 @@ function defineAccessors(obj, props){
 
 
 
-// ##################################################
-// ### Window widget interface wrapper definition ###
-// ##################################################
-
-function Window(w,h){
-  Object.defineProperty(this, '_lib', { value: new qt.QWidget });
-  Emitter.call(this._lib);
-  Emitter.forward(this, this._lib);
-  this.size = [w||400, h||400];
-}
-
-module.exports.Window = createInterface({
-  lib:       qt.QWidget,
-  ctor:      Window,
-  methods:   [ 'update', 'move', 'show', 'close', 'parent' ],
-  accessors: {
-    height:  { get: 'height',     set: function(v){ this.size = [this.width, v]  } },
-    width:   { get: 'width',      set: function(v){ this.size = [v, this.height] } },
-    left:    { get: 'x',          set: function(v){ this._lib.move(v, this.top)  } },
-    top:     { get: 'y',          set: function(v){ this._lib.move(this.left, v) } },
-    size:    { get: 'size',       set: 'resize' },
-    name:    { get: 'objectName', set: 'setObjectName' },
-    focusPolicy:   { set: 'setFocusPolicy' },
-    mouseTracking: { get: 'hasMouseTracking', set: 'setMouseTracking' } }
-});
-
-function ScrollArea(w,h){
-  Object.defineProperty(this, '_lib', { value: new qt.QScrollArea });
-}
-
-module.exports.ScrollArea = createInterface({
-  lib:       qt.QScrollArea,
-  ctor:      ScrollArea,
-  methods:   [ 'update', 'move', 'show', 'close', 'parent' ],
-  accessors: {
-    height:  { get: 'height',     set: function(v){ this.size = [this.width, v]  } },
-    width:   { get: 'width',      set: function(v){ this.size = [v, this.height] } },
-    left:    { get: 'x',          set: function(v){ this._lib.move(v, this.top)  } },
-    top:     { get: 'y',          set: function(v){ this._lib.move(this.left, v) } },
-    size:    { get: 'size',       set: 'resize' },
-    name:    { get: 'objectName', set: 'setObjectName' },
-    widget:      { get: 'widget',     set: 'setWidget' },
-    horizontal:  { get: 'horizontalScrollBar', set: 'setHorizontalScrollBarPolicy' },
-    vertical:    { get: 'verticalScrollBar',   set: 'setVerticalScrollBarPolicy' },
-    frameShape:  { set: 'setFrameShape' },
-    focusPolicy: { set: 'setFocusPolicy' } }
-});
-
-
-
 module.exports.App = App;
 
 function App(name, main){
@@ -132,6 +82,84 @@ App.prototype = {
   __proto__: Emitter.prototype,
   constructor: App,
 };
+
+
+
+
+
+function Widget(parent){
+  Object.defineProperty(this, '_lib', { value: parent || new qt.QWidget });
+}
+
+module.exports.Widget = createInterface({
+  lib:       qt.QWidget,
+  ctor:      Widget,
+  methods:   [ 'update', 'move', 'show', 'close', 'parent' ],
+  accessors: {
+    height:  { get: 'height', set: function(v){ this.size = [this.width, v]  } },
+    width:   { get: 'width',  set: function(v){ this.size = [v, this.height] } },
+    left:    { get: 'x',      set: function(v){ this._lib.move(v, this.top)  } },
+    top:     { get: 'y',      set: function(v){ this._lib.move(this.left, v) } },
+    size:    { get: 'size',       set: 'resize' },
+    name:    { get: 'objectName', set: 'setObjectName' },
+    focus:   { set: 'setFocusPolicy' },
+    capture: { get: 'hasMouseTracking', set: 'setMouseTracking' } }
+});
+
+
+// ##################################################
+// ### Window widget interface wrapper definition ###
+// ##################################################
+
+module.exports.Window = Window;
+
+function Window(w,h){
+  Widget.call(this);
+  Emitter.call(this._lib);
+  Emitter.forward(this, this._lib);
+  this.size = [w||400, h||400];
+}
+
+Window.prototype = Object.create(Widget.prototype);
+Window.prototype.constructor = Window;
+
+
+
+function ScrollArea(w,h){
+  Object.defineProperty(this, '_lib', { value: new qt.QScrollArea });
+}
+
+module.exports.ScrollArea = createInterface({
+  lib:       qt.QScrollArea,
+  ctor:      ScrollArea,
+  methods:   [ 'update', 'move', 'show', 'close', 'parent' ],
+  accessors: {
+    height:  { get: 'height', set: function(v){ this.size = [this.width, v]  } },
+    width:   { get: 'width',  set: function(v){ this.size = [v, this.height] } },
+    left:    { get: 'x',      set: function(v){ this._lib.move(v, this.top)  } },
+    top:     { get: 'y',      set: function(v){ this._lib.move(this.left, v) } },
+    size:    { get: 'size',      set: 'resize' },
+    widget:  { get: 'widget',    set: 'setWidget' },
+    name:    { get: 'objectName',set: 'setObjectName' },
+    horizontal: { get: 'horizontalScrollBar', set: 'setHorizontalScrollBarPolicy' },
+    vertical:   { get: 'verticalScrollBar',   set: 'setVerticalScrollBarPolicy' },
+    shape: { set: 'setFrameShape' },
+    focus: { set: 'setFocusPolicy' } }
+});
+
+
+// provided not constructed
+function ScrollBar(scrollbar){
+  Object.defineProperty(this, '_lib', { value: scrollbar });
+}
+
+module.exports.ScrollBar = createInterface({
+  lib:       qt.QScrollBar,
+  ctor:      ScrollBar,
+  accessors: {
+    value:   { get: 'value',  set: 'setValue'  } }
+});
+
 
 //rgba
 //hex
@@ -170,23 +198,11 @@ function Pixmap(w,h){
 
 module.exports.Pixmap = createInterface({
   lib:       qt.QPixmap,
-  ctor:      Size,
+  ctor:      Pixmap,
   accessors: {
     width:  { get: 'width',  set: 'width'  },
     height: { get: 'height', set: 'height' } },
   methods: ['save', 'fill']
-});
-
-
-function ScrollBar(r,g,b,a){
-  Object.defineProperty(this, '_lib', { value: new qt.QScrollBar(v) });
-}
-
-module.exports.ScrollBar = createInterface({
-  lib:       qt.QScrollBar,
-  ctor:      ScrollBar,
-  accessors: {
-    value:   { get: 'value',  set: 'setValue'  } }
 });
 
 
@@ -206,7 +222,6 @@ module.exports.Painter = createInterface({
 });
 
 
-//QPen(QColor)
 function Pen(brush, width, penStyle, penCapStyle, penJoinStyle){
   Object.defineProperty(this, '_lib', { value: new qt.QPen(brush, width, penStyle, penCapStyle, penJoinStyle) });
 }
@@ -217,7 +232,6 @@ module.exports.Pen = createInterface({
 });
 
 
-//QBrush(GlobalColor)
 function Brush(color){
   if (color in globalColors) color = globalColors[color];
   Object.defineProperty(this, '_lib', { value: new qt.QBrush(color) });
@@ -275,6 +289,8 @@ function PainterPath(a, b, c){
   Object.defineProperty(this, '_lib', { value: new qt.QPainterPath(a, b, c) });
 }
 
+
+//lineTo(QPointF())
 module.exports.PainterPath = createInterface({
   lib:  qt.QPainterPath,
   ctor: PainterPath,
@@ -316,11 +332,3 @@ module.exports.PointF = createInterface({
     dy: { set: 'dy', get: 'dy' } },
   methods: ['translate', 'scale']
 });
-
-
-
-
-
-
-
-
