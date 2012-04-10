@@ -11,7 +11,7 @@ This isn't exactly a real project and lib currently but it's got some useful stu
 
 ```javascript
 function createApp(){
-  var app = new App('Test');
+  var app = new qt.App('Test');
   var window = app.main;
   var position;
 
@@ -21,12 +21,12 @@ function createApp(){
   app.on('shutdown', function(){ window.close() });
 
   window.on('paint', function(){
-    var painter = new Painter;
-    painter.begin(this);
+    var p = new qt.Painter;
+    p.begin(this);
     if (position) {
-      painter.drawText(20, 30, util.inspect(position));
+      p.drawText(20, 30, util.inspect(position));
     }
-    painter.end();
+    p.end();
   });
 
   window.on('mousedown', function(event){
@@ -39,9 +39,33 @@ function createApp(){
     console.log('mouseup', event);
   });
 
+  window.on('keydown', function(event){
+    console.log('keydown', event);
+  });
+  window.on('keyup', function(event){
+    console.log('keyup', event);
+  });
+
   window.on('mousemove', function(event){
     position = event;
     this.update();
+  });
+
+  window.on('mouseenter', function(event){
+    console.log('mouseenter', event);
+  });
+
+  window.on('mouseleave', function(event){
+    console.log('mouseleave', event);
+  });
+
+  window.on('close', function(event){
+    app.stop();
+    console.log('close', event);
+  });
+
+  window.on('resize', function(event){
+    console.log('resize', event);
   });
 
   return app;
@@ -50,6 +74,8 @@ function createApp(){
 var application = createApp();
 
 application.start();
+
+
 ```
 
 ### Valid Constructor Forms References
