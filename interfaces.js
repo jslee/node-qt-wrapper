@@ -17,7 +17,12 @@ function createInterface(opts){
   opts.accessors && defineAccessors(ctor.prototype, opts.accessors);
   opts.methods && defineMethods(ctor.prototype, opts.methods);
 
-  return ctor;
+  return function(){
+    var inst = Object.create(ctor.prototype);
+    ctor.apply(inst, arguments);
+    inst.type = ctor.name;
+    return inst;
+  };
 }
 
 // copy over reamining methods so everything is available on the wrapper
@@ -76,11 +81,16 @@ function App(name, main){
     self.emit('shutdown');
     delete self.stop;
   }
+  this.exit = function exit(){
+    if (app.stop) app.stop();
+    app.exit();
+    return true;
+  }
 }
 
 App.prototype = {
   __proto__: Emitter.prototype,
-  constructor: App,
+  constructor: App
 };
 
 

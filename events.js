@@ -17,45 +17,67 @@ var enums = {
 
 
 
-function resolve(names){
-  return function(e){
-    names.forEach(function(name){
-      if (typeof name === 'string')
-        e[name] = e[name]();
-      if (name in enums)
-        e[name] = enums[name][e[name]];
-    });
-    return e;
-  }
-}
-
 
 // ########################################
 // ### Map QT events to JS style events ###
 // ########################################
-function pass(e){return e}
-var map = {
-  mousemove: [ 'mouseMove',    resolve(['x', 'y']) ],
-  mousedown: [ 'mousePress',   resolve(['x', 'y', 'button']) ],
-  mouseup:   [ 'mouseRelease', resolve(['x', 'y', 'button']) ],
-  keydown:   [ 'keyPress',     resolve(['key', 'text']) ],
-  keyup:     [ 'keyRelease',   resolve(['key', 'text']) ],
-  resize:    [ 'resize',       resolve(['oldSize'])],
-  mouseenter:[ 'enter', pass],
-  mouseleave:[ 'leave', pass],
-  paint:     [ 'paint', pass],
-  close:     [ 'close', pass],
-};
+function resolve(type){
+  return function(e){
+    console.log(e[type]);
+    e[type] = enums[type][e[type]];
+  }
+}
 
-var adapt = ['resizeEvent', 'closeEvent', 'mouseMoveEvent', 'mousePressEvent',
-             'mouseReleaseEvent', 'keyPressEvent', 'keyReleaseEvent', 'enterEvent', 'leaveEvent'];
+
+
+function translate(proto){
+  function Ctor(name){
+    this.name = name;
+    translate.events.push(name);
+  }
+  Ctor.prototype = proto;
+  return Ctor;
+}
+translate.events = [];
 
 function needsAdapter(emitter){
-  for (var i=0; i < adapt.length; i++) {
-    if (adapt[i] in emitter) return true;
+  for (var i=0; i < translate.events.length; i++) {
+    if (translate.events[i] in emitter) return true;
   }
   return false;
 }
+
+
+var TEvent = translate({});
+
+var TKeyEvent = translate({
+  emit: function(emitter, event){
+    event.key = enums.key[event.key()];
+  }
+});
+
+var TTrackEvent = translate({
+  first: function(emitter){
+    emitter.setMouseTracking(true)
+  },
+  last: function(emitter){
+    emitter.setMouseTracking(false);
+  }
+});
+
+var map = {
+  mousemove: new TEvent('mouseMove'),
+  mousedown: new TEvent('mousePress'),
+  mouseup: new TEvent('mouseRelease'),
+  mouseenter: new TTrackEvent('enter'),
+  mouseleave: new TTrackEvent('leave'),
+  keydown: new TKeyEvent('keyPress'),
+  keyup: new TKeyEvent('keyRelease'),
+  resize: new TEvent('resize'),
+  move: new TEvent('move'),
+  paint: new TEvent('paint'),
+  close: new TEvent('close'),
+};
 
 // intercept listener add and remove so we can additionally hit the QT handler
 function adaptEmitter(emitter){
@@ -63,37 +85,62 @@ function adaptEmitter(emitter){
   var origOn = emitter.on;
   var origOff = emitter.off;
 
-  emitter.on = function on(event, callback){
-    if (event in map) {
-      if (refcount[event]) {
-        refcount[event]++;
-      } else {
-        refcount[event] = 1;
-        if (event === 'mousemove') {
-          emitter.setMouseTracking(true);
+  emitter.on = function on(events, callback){
+    events.split(' ').forEach(function(event){
+      if (event in map) {
+        if (refcount[event]) {
+          refcount[event]++;
+        } else {
+          refcount[event] = 1;
+          if (map[event].first) {
+            map[event].first(emitter);
+          }
+          emitter[map[event].name+'Event'](function(e){
+            if (map[event].emit) {
+              map[event].emit(emitter, e);
+            }
+            if (e) {
+              e.type = event;
+              e.target = emitter;
+            } else {
+              e = new Event(event, emitter);
+            }
+            emitter.emit(e);
+          });
         }
-        var norm = map[event];
-        emitter[norm[0]+'Event'](function(e){
-          e = norm[1](e);
-          emitter.emit(event, e);
-        });
       }
-    }
-    return origOn.apply(this, arguments);
+    });
+    origOn.apply(this, arguments);
   }
 
-  emitter.off = function off(event){
-    if (event in map && refcount[event]) {
-      if (!--refcount[event]) {
-        if (event === 'mousemove') {
-          emitter.setMouseTracking(false);
+  emitter.off = function off(events){
+    events.split(' ').forEach(function(event){
+      if (event in map && refcount[event]) {
+        if (!--refcount[event]) {
+          if (map[event].last) {
+            map[event].last(emitter);
+          }
+          emitter[map[event].name+'Event']();
         }
-        var norm = map[event];
-        emitter[norm[0]+'Event']();
       }
-    }
+    });
     return origOff.apply(this, arguments);
   }
+}
+
+
+
+// ### Generic Event ###
+
+function Event(type, target){
+  this.type = type;
+  this.target = target;
+}
+
+function ErrorEvent(error, event, target){
+  Event.call(this, 'error', target)
+  this.error = error;
+  this.event = event;
 }
 
 // ##############################################
@@ -103,7 +150,11 @@ function adaptEmitter(emitter){
 function Emitter(){
   if (!Emitter.prototype.isPrototypeOf(this)) {
     for (var k in Emitter.prototype) {
-      this[k] = Emitter.prototype[k];
+      Object.defineProperty(this, k, {
+        configurable: true,
+        writable: true,
+        value: Emitter.prototype[k]
+      });
     }
   }
   if (needsAdapter(this)) {
@@ -130,13 +181,15 @@ var receivers = new WeakMap;
 
 // standardish emitter that is able to be ignorant of QT needs
 Emitter.prototype = {
-  on: function on(event, listener){
-    var events = emitters.get(this);
-    if (event in events){
-      events[event].push(listener);
-    } else {
-      events[event] = [listener];
-    }
+  on: function on(events, listener){
+    var registered = emitters.get(this);
+    events.split(' ').forEach(function(event){
+      if (event in registered){
+        registered[event].push(listener);
+      } else {
+        registered[event] = [listener];
+      }
+    });
   },
   once: function once(event, listener){
     var self;
@@ -145,11 +198,22 @@ Emitter.prototype = {
       return listener.apply(receivers.get(this), arguments);
     });
   },
-  emit: function emit(event){
-    var listeners = emitters.get(this)[event];
+  emit: function emit(type){
+    var event;
+    if (typeof type !== 'string') {
+      event = type;
+      type = event.type;
+    }
+    var listeners = emitters.get(this)[type];
     if (listeners) {
+      event = event || new Event(type, receivers.get(this));
+      var args = [event].concat(slice(arguments, 1));
       for (var i=0; i < listeners.length; i++) {
-        listeners[i].apply(receivers.get(this), slice(arguments, 1));
+        try {
+          listeners[i].apply(this, args);
+        } catch (e) {
+          this.emit(new ErrorEvent(e, event, listeners[i]));
+        }
       }
     }
   },
