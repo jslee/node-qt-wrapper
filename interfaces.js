@@ -91,6 +91,8 @@ function App(name, main){
   Emitter.call(self);
   self.name = name;
   self.main = main || new Window;
+  self.on('start', function(){ self.main.show() });
+  self.on('stop', function(){ self.main.close() });
   return self;
 }
 

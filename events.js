@@ -91,60 +91,72 @@ var map = {
 
 // intercept listener add and remove so we can additionally hit the QT handler
 function adaptEmitter(emitter){
-  var refcount = {};
   var origOn = emitter.on;
   var origOff = emitter.off;
+  var origOffAll = emitter.offAll;
+  var originals = {};
+
+  for (var k in map) {
+    if (map[k].name in emitter) {
+      originals[k] = emitter[map[k].name];
+      delete emitter[map[k].name];
+    }
+  }
+  var refs = new WeakMap;
 
   emitter.on = function on(event, callback){
-    if (event === '*') {
-      var events = [];
-      for (var k in map) {
-        if (map[k].name in emitter) {
-          events.push(k);
-        }
-      }
-    } else {
-      var events = event.split(' ');
-    }
+    var self = this;
+    var events = event === '*' ? Object.keys(originals) : event.split(' ');
+    var refcount = refs.has(this) ? refs.get(this) : refs.set(this, {});
+
     events.forEach(function(event){
-      if (event in map) {
-        if (refcount[event]) {
-          refcount[event]++;
+      if (!(event in map)) return;
+      if (refcount[event]) return refcount[event]++;
+
+      refcount[event] = 1;
+      if (map[event].first) map[event].first(self);
+
+      originals[event].call(self, function(e){
+        if (map[event].emit) map[event].emit(self, e);
+        if (e) {
+          e.type = event;
+          Object.defineProperty(e, 'target', { value: self });
         } else {
-          refcount[event] = 1;
-          if (map[event].first) {
-            map[event].first(emitter);
-          }
-          emitter[map[event].name](function(e){
-            if (map[event].emit) {
-              map[event].emit(emitter, e);
-            }
-            if (e) {
-              e.type = event;
-              Object.defineProperty(e, 'target', { value: emitter })
-            } else {
-              e = new Event(event, emitter);
-            }
-            emitter.emit(e);
-          });
+          e = new Event(event, self);
         }
-      }
+        self.emit(e);
+      });
     });
     origOn.apply(this, arguments);
   }
 
-  emitter.off = function off(events){
+  emitter.off = function off(event){
+    var self = this;
+    var events = event === '*' ? Object.keys(originals) : event.split(' ');
+    var refcount = refs.has(this) ? refs.get(this) : refs.set(this, {});
     events.split(' ').forEach(function(event){
-      if (event in map && refcount[event]) {
-        if (!--refcount[event]) {
-          if (map[event].last) {
-            map[event].last(emitter);
-          }
-          emitter[map[event].name+'Event']();
+      if (event in originals && refcount[event] && !--refcount[event]) {
+        if (map[event].last) {
+          map[event].last(self);
         }
+        originals[event].call(self);
       }
     });
     return origOff.apply(this, arguments);
+  }
+
+  emitter.offAll = function offAll(){
+    if (refs.has(this)) {
+      var self = this;
+      var refcount = refs.get(this);
+      refs.delete(this);
+      Object.keys(refcount).forEach(function(event){
+        if (refcount[event]) {
+          originals[event].call(self);
+        }
+      });
+    }
+    return origOffAll.apply(this, arguments);
   }
 }
 
@@ -168,18 +180,6 @@ function ErrorEvent(error, event, target){
 // ##############################################
 
 function Emitter(){
-  if (!Emitter.prototype.isPrototypeOf(this)) {
-    for (var k in Emitter.prototype) {
-      Object.defineProperty(this, k, {
-        configurable: true,
-        writable: true,
-        value: Emitter.prototype[k]
-      });
-    }
-  }
-  if (needsAdapter(this)) {
-    adaptEmitter(this);
-  }
   emitters.set(this, {});
   receivers.set(this, this);
 }
@@ -206,6 +206,9 @@ Emitter.castEmitter = function castEmitter(obj){
     }
     obj.__proto__ = Emitter.prototype;
   }
+  if (needsAdapter(obj)) {
+    adaptEmitter(obj);
+  }
 }
 
 
@@ -214,22 +217,33 @@ var receivers = new WeakMap;
 
 // standardish emitter that is able to be ignorant of QT needs
 Emitter.prototype = {
+  constructor: Emitter,
   on: function on(events, listener){
-    var registered = emitters.get(this);
+    var listeners = emitters.get(this);
     events.split(' ').forEach(function(event){
-      if (event in registered){
-        registered[event].push(listener);
+      if (event in listeners){
+        listeners[event].push(listener);
       } else {
-        registered[event] = [listener];
+        listeners[event] = [listener];
       }
-
     });
   },
+  off: function off(event, listener){
+    var listeners = emitters.get(this);
+    events.split(' ').forEach(function(event){
+      if (listeners[event]) {
+        listeners[event].splice(listeners[event].indexOf(listener), 1);
+      }
+    });
+  },
+  offAll: function offAll(event){
+    delete emitters.get(this)[event];
+  },
   once: function once(event, listener){
-    var self;
+    var self = this;
     this.on(event, function(){
       self.off(event, listener);
-      return listener.apply(receivers.get(this), arguments);
+      return listener.apply(receivers.get(self), arguments);
     });
   },
   emit: function emit(type){
@@ -253,19 +267,6 @@ Emitter.prototype = {
           this.emit(new ErrorEvent(e, event, listeners[i]));
         }
       }
-    }
-  },
-  off: function off(event, listener){
-    var listeners = emitters.get(this)[event];
-    if (listeners) {
-      listeners.splice(listeners.indexOf(listener), 1);
-    }
-  },
-  offAll: function offAll(event){
-    if (event) {
-      emitters.get(this)[event] = [];
-    } else {
-      emitters.set(this, {});
     }
   },
 };
