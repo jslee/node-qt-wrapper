@@ -3,6 +3,31 @@ var Emitter = require('./events');
 var reverse = require('./utility').reverse;
 var globalColor = reverse(qt.GlobalColor);
 
+function mixin(to, from){
+  Object.keys(from).forEach(function(key){
+    to[key] = from[key];
+  })
+}
+
+var bindbind = Function.bind.bind(Function.bind);
+var callbind = bindbind(Function.call);
+var applybind = bindbind(Function.apply);
+var bind = callbind(Function.bind);
+var call = callbind(Function.call);
+var apply = callbind(Function.apply);
+var concat = callbind([].concat, []);
+var slice = callbind([].slice);
+
+function make(self, ctor, superctor, args){
+  //if (!(self instanceof superctor)) {
+    if (args) {
+      superctor = apply(Function.bind, superctor, concat(null, args));
+    }
+    self = new superctor;
+    self.__proto__ = ctor.prototype;
+  //}
+  return self;
+}
 
 // ##########################################################
 // ### Create an interface wrapper closer to JS semantics ###
@@ -59,63 +84,59 @@ function defineAccessors(obj, props){
 
 
 module.exports.App = App;
+Emitter.castEmitter(qt.QApplication.prototype);
 
 function App(name, main){
-  var self = this;
-  var app = new qt.QApplication;
-  this.main = main || new Window;
-  this.name = name;
-  this.start = start;
-  Emitter.call(this);
-
-  var timer;
-  function start(){
-    timer = setInterval(app.processEvents, 10);
-    self.stop = stop;
-    delete self.start;
-    self.emit('startup');
-  }
-  function stop(){
-    clearInterval(timer);
-    self.start = start;
-    self.emit('shutdown');
-    delete self.stop;
-  }
-  this.exit = function exit(){
-    if (app.stop) app.stop();
-    app.exit();
-    return true;
-  }
+  var self = make(this, App, qt.QApplication);
+  Emitter.call(self);
+  self.name = name;
+  self.main = main || new Window;
+  return self;
 }
 
+var timers = new WeakMap;
+
 App.prototype = {
-  __proto__: Emitter.prototype,
-  constructor: App
+  __proto__: qt.QApplication.prototype,
+  start: function start(){
+    if (timers.has(this)) return;
+    timers.set(this, setInterval(this.processEvents.bind(this), 10));
+    this.running = true;
+    this.emit('start');
+  },
+  stop: function stop(){
+    if (!timers.has(this)) return;
+    clearInterval(timers.get(this));
+    timers.delete(this);
+    this.running = false;
+    this.emit('stop');
+  },
+  exit: function exit(){
+    if (!timers.has(this)) return;
+    clearInterval(timers.get(this));
+    timers.delete(this);
+    qt.QApplication.prototype.exit.call(this);
+    this.running = false;
+    this.emit('exit');
+    this.__proto__ = exited;
+  }
+};
+
+var noop = function(){};
+var exited = {
+  __proto__: App.prototype,
+  start: noop,
+  stop: noop,
+  exit: noop,
+  exec: noop,
+  processEvents: noop,
 };
 
 
 
 
-
-function Widget(parent){
-  Object.defineProperty(this, '_lib', { value: parent || new qt.QWidget });
-}
-
-module.exports.Widget = createInterface({
-  lib:       qt.QWidget,
-  ctor:      Widget,
-  methods:   [ 'update', 'move', 'show', 'close', 'parent' ],
-  accessors: {
-    height:  { get: 'height', set: function(v){ this.size = [this.width, v]  } },
-    width:   { get: 'width',  set: function(v){ this.size = [v, this.height] } },
-    left:    { get: 'x',      set: function(v){ this._lib.move(v, this.top)  } },
-    top:     { get: 'y',      set: function(v){ this._lib.move(this.left, v) } },
-    size:    { get: 'size',       set: 'resize' },
-    name:    { get: 'objectName', set: 'setObjectName' },
-    focus:   { set: 'setFocusPolicy' },
-    capture: { get: 'hasMouseTracking', set: 'setMouseTracking' } }
-});
-
+module.exports.Widget = qt.QWidget;
+Emitter.castEmitter(qt.QWidget.prototype);
 
 // ##################################################
 // ### Window widget interface wrapper definition ###
@@ -123,15 +144,17 @@ module.exports.Widget = createInterface({
 
 module.exports.Window = Window;
 
-function Window(w,h){
-  Widget.call(this);
-  Emitter.call(this._lib);
-  Emitter.forward(this, this._lib);
-  this.size = [w||400, h||400];
+function Window(w, h){
+  var self = make(this, Window, qt.QWidget);
+  self.resize(w || 400, h || 400);
+  Emitter.call(self);
+  return self;
 }
 
-Window.prototype = Object.create(Widget.prototype);
-Window.prototype.constructor = Window;
+Window.prototype = {
+  __proto__: qt.QWidget.prototype,
+  constructor: Window
+};
 
 
 

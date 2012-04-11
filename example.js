@@ -15,9 +15,9 @@ function createApp(){
   var appPos;
 
   // open window on startup
-  app.on('startup', function(event){ window.show() });
+  app.on('start', function(event){ window.show() });
   // close window on shutdown
-  app.on('shutdown', function(event){ window.close() });
+  app.on('stop', function(event){ window.close() });
 
   window.on('paint', function(event){
     var p = new qt.Painter;
@@ -37,7 +37,7 @@ function createApp(){
   });
 
   window.on('move', function(event){
-    appPos = event;
+    appPos = { x: event.pos.x, y: event.pos.y };
     event.target.update();
   });
 
@@ -45,7 +45,11 @@ function createApp(){
     if (event.button === 2) app.stop();
   });
 
-  window.on('mouseup mousedown mouseenter mouseleave keydown keyup close resize', log);
+  window.on('*', function(event){
+    if (event.type !== 'mousemove' && event.type !== 'paint') {
+      log(event);
+    }
+  });
 
 
   return app;
