@@ -1,5 +1,5 @@
 var qt = require('node-qt');
-
+var constants = require('./constants');
 var slice = require('./utility').slice;
 var reverse = require('./utility').reverse;
 
@@ -16,23 +16,23 @@ var enums = {
 };
 
 
+function mods(value, lookup, obj){
+  obj = obj || {};
+  for (var name in lookup) {
+    if ((value & lookup[name]) > 0) obj[name] = true;
+  }
+  return obj;
+}
 
 
 // ########################################
 // ### Map QT events to JS style events ###
 // ########################################
-function resolve(type){
-  return function(e){
-    console.log(e[type]);
-    e[type] = enums[type][e[type]];
-  }
-}
-
 
 
 function translate(proto){
   function Ctor(name){
-    this.name = name;
+    this.name = name+'Event';
     translate.events.push(name);
   }
   Ctor.prototype = proto;
@@ -50,27 +50,37 @@ function needsAdapter(emitter){
 
 var TEvent = translate({});
 
+var TMouseEvent = translate({
+  emit: function(emitter, event){
+    mods(event.modifiers, constants.modifiers, event);
+    delete event.modifiers;
+  }
+})
+
 var TKeyEvent = translate({
   emit: function(emitter, event){
     event.key = enums.key[event.key()];
+    mods(event.modifiers, constants.modifiers, event);
+    delete event.modifiers;
   }
 });
 
 var TTrackEvent = translate({
   first: function(emitter){
-    emitter.setMouseTracking(true)
+    emitter.mouseTracking = true;
   },
   last: function(emitter){
-    emitter.setMouseTracking(false);
+    emitter.mouseTracking = false;
   }
 });
 
+
 var map = {
-  mousemove: new TEvent('mouseMove'),
-  mousedown: new TEvent('mousePress'),
-  mouseup: new TEvent('mouseRelease'),
-  mouseenter: new TTrackEvent('enter'),
-  mouseleave: new TTrackEvent('leave'),
+  mousemove: new TTrackEvent('mouseMove'),
+  mousedown: new TMouseEvent('mousePress'),
+  mouseup: new TMouseEvent('mouseRelease'),
+  mouseenter: new TEvent('enter'),
+  mouseleave: new TEvent('leave'),
   keydown: new TKeyEvent('keyPress'),
   keyup: new TKeyEvent('keyRelease'),
   resize: new TEvent('resize'),
@@ -85,8 +95,18 @@ function adaptEmitter(emitter){
   var origOn = emitter.on;
   var origOff = emitter.off;
 
-  emitter.on = function on(events, callback){
-    events.split(' ').forEach(function(event){
+  emitter.on = function on(event, callback){
+    if (event === '*') {
+      var events = [];
+      for (var k in map) {
+        if (map[k].name in emitter) {
+          events.push(k);
+        }
+      }
+    } else {
+      var events = event.split(' ');
+    }
+    events.forEach(function(event){
       if (event in map) {
         if (refcount[event]) {
           refcount[event]++;
@@ -95,13 +115,13 @@ function adaptEmitter(emitter){
           if (map[event].first) {
             map[event].first(emitter);
           }
-          emitter[map[event].name+'Event'](function(e){
+          emitter[map[event].name](function(e){
             if (map[event].emit) {
               map[event].emit(emitter, e);
             }
             if (e) {
               e.type = event;
-              e.target = emitter;
+              Object.defineProperty(e, 'target', { value: emitter })
             } else {
               e = new Event(event, emitter);
             }
@@ -175,6 +195,19 @@ Emitter.forward = function forward(from, to){
   from.off = to.off.bind(to);
 }
 
+Emitter.castEmitter = function castEmitter(obj){
+  if (Object.getPrototypeOf(obj) === Object.prototype) {
+    obj.__proto__ = Emitter.prototype;
+  } else {
+    var proto = obj;
+    while (proto = Object.getPrototypeOf(proto)) {
+      if (proto === null || proto === Object.prototype) break;
+      obj = proto;
+    }
+    obj.__proto__ = Emitter.prototype;
+  }
+}
+
 
 var emitters = new WeakMap;
 var receivers = new WeakMap;
@@ -189,6 +222,7 @@ Emitter.prototype = {
       } else {
         registered[event] = [listener];
       }
+
     });
   },
   once: function once(event, listener){
@@ -199,12 +233,16 @@ Emitter.prototype = {
     });
   },
   emit: function emit(type){
-    var event;
+    var event, events = emitters.get(this);
     if (typeof type !== 'string') {
       event = type;
       type = event.type;
     }
-    var listeners = emitters.get(this)[type];
+    if (events['*']) {
+      var listeners = events[type] ? events['*'].concat(events[type]) : events['*'];
+    } else {
+      var listeners = events[type];
+    }
     if (listeners) {
       event = event || new Event(type, receivers.get(this));
       var args = [event].concat(slice(arguments, 1));
