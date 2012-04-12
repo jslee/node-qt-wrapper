@@ -134,7 +134,7 @@ function adaptEmitter(emitter){
     var self = this;
     var events = event === '*' ? Object.keys(originals) : event.split(' ');
     var refcount = refs.has(this) ? refs.get(this) : refs.set(this, {});
-    events.split(' ').forEach(function(event){
+    events.forEach(function(event){
       if (event in originals && refcount[event] && !--refcount[event]) {
         if (map[event].last) {
           map[event].last(self);
@@ -228,7 +228,7 @@ Emitter.prototype = {
       }
     });
   },
-  off: function off(event, listener){
+  off: function off(events, listener){
     var listeners = emitters.get(this);
     events.split(' ').forEach(function(event){
       if (listeners[event]) {

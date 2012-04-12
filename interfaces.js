@@ -102,7 +102,7 @@ App.prototype = {
   __proto__: qt.QApplication.prototype,
   start: function start(){
     if (timers.has(this)) return;
-    timers.set(this, setInterval(this.processEvents.bind(this), 10));
+    timers.set(this, setInterval(this.processEvents.bind(this), 1));
     this.running = true;
     this.emit('start');
   },
@@ -135,10 +135,14 @@ var exited = {
 };
 
 
-
+module.exports.URL = qt.QUrl;
 
 module.exports.Widget = qt.QWidget;
 Emitter.castEmitter(qt.QWidget.prototype);
+
+module.exports.WebView = qt.QWebView;
+Emitter.castEmitter(qt.QWebView.prototype);
+
 
 // ##################################################
 // ### Window widget interface wrapper definition ###
